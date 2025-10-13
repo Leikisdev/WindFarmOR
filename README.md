@@ -16,10 +16,6 @@ The optimization objective is defined as the **negative total AEP**:
 where AEP is computed from wind resource data (wind speed, direction, and frequency) and turbine characteristics (cut-in/out speeds, rated power, etc.) via the `calcAEP()` model.
 
 ### 2. **Constraints**
-Each turbine must remain **within a circular farm boundary**:
-\[
-\sqrt{x_i^2 + y_i^2} \leq R_\text{farm}
-\]
-implemented as inequality constraints:
+Each turbine must remain **within a circular farm boundary** implemented as inequality constraints:
 ```python
 farm_radius - sqrt(x_i**2 + y_i**2) >= 0
