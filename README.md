@@ -9,11 +9,7 @@ The goal is to **maximize the Annual Energy Production (AEP)** of a wind farm wh
 ## Approach
 
 ### 1. **Objective Function**
-The optimization objective is defined as the **negative total AEP**:
-\[
-\text{Objective} = -\sum_i \text{AEP}_i
-\]
-where AEP is computed from wind resource data (wind speed, direction, and frequency) and turbine characteristics (cut-in/out speeds, rated power, etc.) via the `calcAEP()` model.
+The optimization objective is defined as the **negative total AEP** where AEP is computed from wind resource data (wind speed, direction, and frequency) and turbine characteristics (cut-in/out speeds, rated power, etc.) via the `calcAEP()` model.
 
 ### 2. **Constraints**
 Each turbine must remain **within a circular farm boundary** implemented as inequality constraints:
