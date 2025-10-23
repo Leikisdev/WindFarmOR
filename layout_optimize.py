@@ -15,14 +15,15 @@ wind_spec_file = "iea37-335mw.yaml"
 output_path = "output_data/"
 output_template = "iea37-output-template.yaml"
 
-def RunOptimization(input_loc_path, farm_radius, mu = 1.0):
+def runOptimization(input_loc_path, farm_radius, mu = 1.0):
     # Load data
     init_turb_coords = getLocationsYAML(input_loc_path)
     wind_dir, wind_freq, wind_speed = getWindRoseYAML(f"{input_path}{windrose_file}")
     turb_ci, turb_co, rated_ws, rated_pwr, turb_diam = getTurbAtrbtYAML(f"{input_path}{wind_spec_file}")
 
+    # 
     n_turb = init_turb_coords.x.size
-    xy0 = np.asarray(flatten_coords(init_turb_coords), dtype=np.float64)  # flat vector for SciPy
+    xy0 = np.asarray(flatten_coords(init_turb_coords), dtype=np.float64)
     if xy0[0] == 0 and xy0[n_turb] == 0:
         xy0[0] = 1e-3
         xy0[n_turb] = 1e-3
@@ -62,7 +63,7 @@ def RunOptimization(input_loc_path, farm_radius, mu = 1.0):
     def objective_np(xy_flat):
         coords = unflatten_coords(jnp.asarray(xy_flat), n_turb)
         val = objective_func(coords)
-        return float(val) / 400000 # safe Python scalar
+        return float(val) # safe Python scalar
 
     def grad_np(xy_flat):
         coords = unflatten_coords(jnp.asarray(xy_flat), n_turb)
@@ -72,15 +73,14 @@ def RunOptimization(input_loc_path, farm_radius, mu = 1.0):
             np.asarray(grad_coords.y, dtype=np.float64)
         ])
 
-    epsilon = 1e-2
     def constraint_np(xy_flat):
         coords = unflatten_coords(jnp.asarray(xy_flat), n_turb)
-        return np.asarray((farm_radius - jnp.sqrt(coords.x**2 + coords.y**2) + epsilon) / farm_radius, dtype=np.float64)
+        return np.asarray((farm_radius - jnp.sqrt(coords.x**2 + coords.y**2)), dtype=np.float64)
     
     def constraint_prox_np(xy_flat):
         coords = unflatten_coords(jnp.asarray(xy_flat), n_turb)
         vals = constraint_prox(coords)
-        return np.asarray(vals / (2 * turb_diam), dtype=np.float64)
+        return np.asarray(vals, dtype=np.float64)
 
     def jac_np(xy_flat):
         coords = unflatten_coords(jnp.asarray(xy_flat), n_turb)
@@ -100,28 +100,17 @@ def RunOptimization(input_loc_path, farm_radius, mu = 1.0):
 
     cons = [
         {'type': 'ineq', 'fun': constraint_np, 'jac': jac_np},
-        {'type': 'ineq', 'fun': constraint_prox_np}
+        {'type': 'ineq', 'fun': constraint_prox_np, 'jac': jac_prox_np}
     ]
-
-    # Constraint dims:
-    print("Contstraint dimensions:")
-    prox_vals = constraint_prox_np(xy0)
-    print(f"Proximity constraint min: {prox_vals.min():.6f}, max: {prox_vals.max():.6f}")
-    print(f"Any violated: {np.any(prox_vals < 0)}")
-
-    perim_vals = constraint_np(xy0)
-    print(f"Perimeter constraint min: {perim_vals.min():.6f}, max: {perim_vals.max():.6f}")
-    print(f"Any violated: {np.any(perim_vals < 0)}")
-
-    print("jac_prox_np shape:", jac_prox_np(xy0).shape)
 
     # Run optimization
     res = minimize(objective_np, xy0, jac=grad_np,
                    constraints=cons, method='SLSQP',options={'ftol': 1e-6, 'disp': True, 'maxiter': 1000})
     if res.success:
-        # Return results as Coordinates again
+        # Return optimized coordinates results as Coordinates object again
         opt_coords = unflatten_coords(res.x, n_turb)
-        
+
+        # Calculate AEP vector for optimized coordinates
         AEP_array = calcAEP(
             opt_coords,
             wind_freq=wind_freq,
@@ -134,26 +123,12 @@ def RunOptimization(input_loc_path, farm_radius, mu = 1.0):
             turb_diam=turb_diam,
             mu=1.0
         )
-        AEP_array_init = calcAEP(
-            init_turb_coords,
-            wind_freq=wind_freq,
-            wind_dir=wind_dir,
-            wind_speed=wind_speed,
-            turb_ci=turb_ci,
-            turb_co=turb_co,
-            rated_ws=rated_ws,
-            rated_pwr=rated_pwr,
-            turb_diam=turb_diam,
-            mu=1.0
-        )
-        print(AEP_array)
-        print(AEP_array_init)
-        StoreOutput(opt_coords.x, opt_coords.y, AEP_array, jnp.sum(AEP_array), n_turb, mu)
+
+        storeOutput(opt_coords.x, opt_coords.y, AEP_array, jnp.sum(AEP_array), n_turb, mu)
         return opt_coords, res
     else:
         print(res)
     return Coordinates(jnp.empty(0), jnp.empty(0)), res
-
 
 def flatten_coords(coords: Coordinates) -> jnp.ndarray:
     """Convert Coordinates → flat array."""
@@ -166,7 +141,7 @@ def unflatten_coords(xy_flat: jnp.ndarray, n_turb: int) -> Coordinates:
         y = xy_flat[n_turb:]
     )
 
-def StoreOutput(x_coords, y_coords, AEP_array, AEP_total, num_turb, mu):
+def storeOutput(x_coords, y_coords, AEP_array, AEP_total, num_turb, mu):
     # 1. Read the YAML template file
     with open(output_path + output_template, "r") as f:
         data = yaml.safe_load(f)
@@ -183,7 +158,7 @@ def StoreOutput(x_coords, y_coords, AEP_array, AEP_total, num_turb, mu):
         yaml.safe_dump(data, f, sort_keys=False)
 
 if __name__ == "__main__":
-    coords, res = RunOptimization(f"{output_path}iea37-16-18.yaml", 1300, 1.7)
+    coords, res = runOptimization(f"{output_path}iea37-16-18.yaml", 1300, 1.7)
     if res.success:
         print("Found solution:")
         print(f"X coords: {coords.x}")
